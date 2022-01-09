@@ -103,8 +103,82 @@ void sort_32_f32_avx(__m256 &v0, __m256 &v1, __m256 &v2, __m256 &v3) {
 }
 
 template <typename SORT_IMPL>
+void sort_64_f32_avx_bitonic_input(float *dat) {
+  __m256 v0 = _mm256_loadu_ps(dat), v1 = _mm256_loadu_ps(dat + 8),
+    v2 = _mm256_loadu_ps(dat + 16), v3 = _mm256_loadu_ps(dat + 24);
+  __m256 v4 = _mm256_loadu_ps(dat + 32), v5 = _mm256_loadu_ps(dat + 40),
+    v6 = _mm256_loadu_ps(dat + 48), v7 = _mm256_loadu_ps(dat + 56);
+  __m256 n0 = SORT_IMPL::pick_up(v0, v4), n1 = SORT_IMPL::pick_up(v1, v5),
+    n2 = SORT_IMPL::pick_up(v2, v6), n3 = SORT_IMPL::pick_up(v3, v7);
+  v4 = SORT_IMPL::pick_down(v0, v4);
+  v5 = SORT_IMPL::pick_down(v1, v5);
+  v6 = SORT_IMPL::pick_down(v2, v6);
+  v7 = SORT_IMPL::pick_down(v3, v7);
+  sort_32_f32_avx_bitonic_input<SORT_IMPL>(n0, n1, n2, n3);
+  _mm256_storeu_ps(dat, n0);
+  _mm256_storeu_ps(dat + 8, n1);
+  _mm256_storeu_ps(dat + 16, n2);
+  _mm256_storeu_ps(dat + 24, n3);
+  sort_32_f32_avx_bitonic_input<SORT_IMPL>(v4, v5, v6, v7);
+  _mm256_storeu_ps(dat + 32, v4);
+  _mm256_storeu_ps(dat + 40, v5);
+  _mm256_storeu_ps(dat + 48, v6);
+  _mm256_storeu_ps(dat + 56, v7);
+}
+
+template <typename SORT_IMPL>
+void sort_64_f32_avx(float *dat) {
+  __m256 v0 = _mm256_loadu_ps(dat), v1 = _mm256_loadu_ps(dat + 8),
+    v2 = _mm256_loadu_ps(dat + 16), v3 = _mm256_loadu_ps(dat + 24);
+  sort_32_f32_avx<SORT_IMPL>(v0, v1, v2, v3);
+  _mm256_storeu_ps(dat, v0);
+  _mm256_storeu_ps(dat + 8, v1);
+  _mm256_storeu_ps(dat + 16, v2);
+  _mm256_storeu_ps(dat + 24, v3);
+  __m256 v4 = _mm256_loadu_ps(dat + 32), v5 = _mm256_loadu_ps(dat + 40),
+    v6 = _mm256_loadu_ps(dat + 48), v7 = _mm256_loadu_ps(dat + 56);
+  sort_32_f32_avx<typename SORT_IMPL::reverse_type>(v4, v5, v6, v7);
+  _mm256_storeu_ps(dat + 32, v4);
+  _mm256_storeu_ps(dat + 40, v5);
+  _mm256_storeu_ps(dat + 48, v6);
+  _mm256_storeu_ps(dat + 56, v7);
+  sort_64_f32_avx_bitonic_input<SORT_IMPL>(dat);
+}
+
+template <typename SORT_IMPL>
+void part_32v32_f32(float *up, float *down) {
+  __m256 v0 = _mm256_loadu_ps(up), v1 = _mm256_loadu_ps(up + 8),
+    v2 = _mm256_loadu_ps(up + 16), v3 = _mm256_loadu_ps(up + 24);
+  __m256 v4 = _mm256_loadu_ps(down), v5 = _mm256_loadu_ps(down + 8),
+    v6 = _mm256_loadu_ps(down + 16), v7 = _mm256_loadu_ps(down + 24);
+  _mm256_storeu_ps(up, SORT_IMPL::pick_up(v0, v4));
+  _mm256_storeu_ps(up + 8, SORT_IMPL::pick_up(v1, v5));
+  _mm256_storeu_ps(up + 16, SORT_IMPL::pick_up(v2, v6));
+  _mm256_storeu_ps(up + 24, SORT_IMPL::pick_up(v3, v7));
+  _mm256_storeu_ps(down, SORT_IMPL::pick_down(v0, v4));
+  _mm256_storeu_ps(down + 8, SORT_IMPL::pick_down(v1, v5));
+  _mm256_storeu_ps(down + 16, SORT_IMPL::pick_down(v2, v6));
+  _mm256_storeu_ps(down + 24, SORT_IMPL::pick_down(v3, v7));
+}
+
+template <typename SORT_IMPL>
+void sort_128_f32_avx_bitonic_input(float *dat) {
+  part_32v32_f32<SORT_IMPL>(dat, dat + 64);
+  part_32v32_f32<SORT_IMPL>(dat + 32, dat + 96);
+  sort_64_f32_avx_bitonic_input<SORT_IMPL>(dat);
+  sort_64_f32_avx_bitonic_input<SORT_IMPL>(dat + 64);
+}
+
+template <typename SORT_IMPL>
+void sort_128_f32_avx(float *dat) {
+  sort_64_f32_avx<SORT_IMPL>(dat);
+  sort_64_f32_avx<typename SORT_IMPL::reverse_type>(dat + 64);
+  sort_128_f32_avx_bitonic_input<SORT_IMPL>(dat);
+}
+
+template <typename SORT_IMPL>
 void top_16_f32_avx(float *dat, std::size_t folds) {
-  if (folds <= 1) return;
+  if (!folds) return;
   __m256 v0 = _mm256_loadu_ps(dat), v1 = _mm256_loadu_ps(dat + 8);
   sort_16_f32_avx<SORT_IMPL>(v0, v1);
   float * const begin_ = dat;
@@ -124,7 +198,7 @@ void top_16_f32_avx(float *dat, std::size_t folds) {
 
 template <typename SORT_IMPL>
 void top_32_f32_avx(float *dat, std::size_t folds) {
-  if (folds <= 1) return;
+  if (!folds) return;
   __m256 v0 = _mm256_loadu_ps(dat), v1 = _mm256_loadu_ps(dat + 8),
     v2 = _mm256_loadu_ps(dat + 16), v3 = _mm256_loadu_ps(dat + 24);
   sort_32_f32_avx<SORT_IMPL>(v0, v1, v2, v3);
@@ -148,6 +222,36 @@ void top_32_f32_avx(float *dat, std::size_t folds) {
   _mm256_storeu_ps(begin_ + 8, v1);
   _mm256_storeu_ps(begin_ + 16, v2);
   _mm256_storeu_ps(begin_ + 24, v3);
+}
+
+template <typename SORT_IMPL>
+void top_64_f32_avx(float *dat, std::size_t folds) {
+  if (!folds) return;
+  sort_64_f32_avx<SORT_IMPL>(dat);
+  float * const begin_ = dat;
+  for (; folds > 1; folds--) {
+    dat += 64;
+    sort_64_f32_avx<typename SORT_IMPL::reverse_type>(dat);
+    part_32v32_f32<SORT_IMPL>(begin_, dat);
+    part_32v32_f32<SORT_IMPL>(begin_ + 32, dat + 32);
+    sort_64_f32_avx_bitonic_input<SORT_IMPL>(begin_);
+  }
+}
+
+template <typename SORT_IMPL>
+void top_128_f32_avx(float *dat, std::size_t folds) {
+  if (!folds) return;
+  sort_128_f32_avx<SORT_IMPL>(dat);
+  float * const begin_ = dat;
+  for (; folds > 1; folds--) {
+    dat += 128;
+    sort_128_f32_avx<typename SORT_IMPL::reverse_type>(dat);
+    part_32v32_f32<SORT_IMPL>(begin_, dat);
+    part_32v32_f32<SORT_IMPL>(begin_ + 32, dat + 32);
+    part_32v32_f32<SORT_IMPL>(begin_ + 64, dat + 64);
+    part_32v32_f32<SORT_IMPL>(begin_ + 96, dat + 96);
+    sort_128_f32_avx_bitonic_input<SORT_IMPL>(begin_);
+  }
 }
 
 struct SORT_DECR;
