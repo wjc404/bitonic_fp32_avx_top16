@@ -55,8 +55,14 @@ int main(int argc, char **argv) {
   const std::size_t folds = argc > 1 ? std::atoi(argv[1]) : 300;
   constexpr unsigned int iters = 6;
   test_bitonic_topk_fp32(top_16_f32_avx<SORT_INCR>, 16, folds * 8, iters);
+#if __AVX512F__
+  test_bitonic_topk_fp32(top_32_f32_avx<SORT_INCR_512>, 32, folds * 4, iters);
+  test_bitonic_topk_fp32(top_64_f32_avx<SORT_INCR_512>, 64, folds * 2, iters);
+  test_bitonic_topk_fp32(top_128_f32_avx<SORT_INCR_512>, 128, folds, iters);
+#else
   test_bitonic_topk_fp32(top_32_f32_avx<SORT_INCR>, 32, folds * 4, iters);
   test_bitonic_topk_fp32(top_64_f32_avx<SORT_INCR>, 64, folds * 2, iters);
   test_bitonic_topk_fp32(top_128_f32_avx<SORT_INCR>, 128, folds, iters);
+#endif
 }
 
